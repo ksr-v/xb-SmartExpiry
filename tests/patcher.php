@@ -26,8 +26,16 @@ try {
     }
 
     $patcher = new AdminBridgePatcher($fixture);
-    if ($patcher->apply() !== 'already patched') {
-        throw new RuntimeException('Idempotency check failed.');
+    $firstResult = $patcher->apply();
+    if (!in_array($firstResult, ['upgraded from v2', 'already patched'], true)
+        || $patcher->apply() !== 'already patched'
+    ) {
+        throw new RuntimeException('V2 upgrade or idempotency check failed.');
+    }
+
+    $index = file_get_contents($fixture . '/public/assets/admin/index.html');
+    if (substr_count($index, '?v=' . AdminBridgePatcher::MARKER) !== 4) {
+        throw new RuntimeException('Admin asset cache keys were not versioned.');
     }
 
     foreach (array_slice($files, 1) as $relative) {
