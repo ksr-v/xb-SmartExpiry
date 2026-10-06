@@ -27,10 +27,10 @@ try {
 
     $patcher = new AdminBridgePatcher($fixture);
     $firstResult = $patcher->apply();
-    if (!in_array($firstResult, ['upgraded from v2', 'already patched'], true)
+    if (!in_array($firstResult, ['upgraded from v2', 'upgraded from v3', 'already patched'], true)
         || $patcher->apply() !== 'already patched'
     ) {
-        throw new RuntimeException('V2 upgrade or idempotency check failed.');
+        throw new RuntimeException('Legacy upgrade or idempotency check failed.');
     }
 
     $index = file_get_contents($fixture . '/public/assets/admin/index.html');

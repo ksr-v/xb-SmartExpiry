@@ -5,8 +5,8 @@ const path = require('node:path');
 process.env.TZ = 'Asia/Shanghai';
 
 const bundle = fs.readFileSync(path.join(__dirname, '../../../public/assets/admin/assets/index-CEIYH7i8.js'), 'utf8');
-const editMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(u\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-edit-v3\*\//);
-const createMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(r\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-create-v3\*\//);
+const editMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(u\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-edit-v4\*\//);
+const createMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(r\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-create-v4\*\//);
 assert.ok(editMatch, 'edit-user renewal function exists');
 assert.ok(createMatch, 'create-user renewal function exists');
 
@@ -92,14 +92,37 @@ for (const key of ['expire_time_1month', 'expire_time_3months', 'expire_time_6mo
 }
 assert.equal((bundle.match(/onClick:\(\)=>h\((1|3|6|9|12)\)/g) || []).length, 10, 'both scenes share one handler per form');
 assert.ok(bundle.includes('type:"datetime-local",step:"1"'), 'date-time picker keeps second precision');
-assert.ok(bundle.includes('smart-expiry-create-v3'), 'create-user bridge marker exists');
+assert.ok(bundle.includes('smart-expiry-create-v4'), 'create-user bridge marker exists');
 assert.ok(bundle.includes('r.setValue("expired_at",null,{shouldDirty:!0,shouldValidate:!0}),u(!1)'), 'permanent reuses null expiry semantics');
 assert.ok((bundle.match(/className:"grid grid-cols-3 gap-2"/g) || []).length >= 2, 'expiry actions use a stable three-column mobile grid');
 assert.equal((bundle.match(/className:"w-full min-w-0 px-1 text-xs sm:px-3 sm:text-sm"/g) || []).length, 12, 'all expiry buttons are mobile-safe');
 for (const key of ['edit.form.expire_time_6months', 'edit.form.expire_time_9months', 'edit.form.expire_time_1year',
   'generate.form.expire_time_1month', 'generate.form.expire_time_3months', 'generate.form.expire_time_6months',
-  'generate.form.expire_time_9months', 'generate.form.expire_time_1year']) {
-  assert.ok(bundle.includes(`${key}",{defaultValue:`), `${key} has a translated fallback`);
+  'generate.form.expire_time_9months', 'generate.form.expire_time_1year', 'generate.form.expire_time_specific',
+  'generate.form.expire_time_today', 'generate.form.expire_time_confirm']) {
+  assert.ok(bundle.includes(`const e="${key}"`), `${key} has an explicit translated fallback`);
+}
+assert.ok(bundle.includes('i.includes("永久")?"一个月"'), 'Chinese create-user month fallback is selected from the permanent label');
+
+const createFallbacks = {
+  expire_time_1month: ['一个月', 'One Month'],
+  expire_time_3months: ['三个月', 'Three Months'],
+  expire_time_6months: ['六个月', 'Six Months'],
+  expire_time_9months: ['九个月', 'Nine Months'],
+  expire_time_1year: ['一年', 'One Year'],
+  expire_time_specific: ['具体时间', 'Specific Time'],
+  expire_time_today: ['设为当天结束', 'Set to end of today'],
+  expire_time_confirm: ['确定', 'Confirm'],
+};
+for (const [suffix, [zh, en]] of Object.entries(createFallbacks)) {
+  const key = `generate.form.${suffix}`;
+  const escaped = key.replaceAll('.', '\\.');
+  const match = bundle.match(new RegExp(`children:(\\(\\(\\)=>\\{const e="${escaped}".+?\\}\\)\\(\\))`));
+  assert.ok(match, `${key} fallback expression exists`);
+  const render = Function('t', `return ${match[1]}`);
+  assert.equal(render(candidate => candidate === 'generate.form.permanent' ? '永久' : candidate), zh);
+  assert.equal(render(candidate => candidate === 'generate.form.permanent' ? 'Permanent' : candidate), en);
+  assert.equal(render(candidate => candidate === key ? `已翻译:${suffix}` : '永久'), `已翻译:${suffix}`);
 }
 
 const createStart = bundle.indexOf('Q.jsxs(P$t,{open:d,onOpenChange:u');
