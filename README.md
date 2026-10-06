@@ -1,19 +1,19 @@
 # SmartExpiry
 
-SmartExpiry adds safe calendar-month expiry controls to Xboard's admin user forms.
+SmartExpiry 为 Xboard 后台的用户表单添加安全、便捷的按自然月调整到期时间功能。
 
-## Supported scenes
+## 支持场景
 
-1. Edit User
-2. Create User
+1. 编辑用户
+2. 创建用户
 
-Both scenes provide Permanent, 1, 3, 6, 9, and 12 month actions. Create User also reuses the Edit User date-time controls, including the calendar and the browser-native time scroller with hour, minute, and second precision.
+两个场景均提供“永久”以及增加 1、3、6、9、12 个月的快捷操作。创建用户页面还会复用编辑用户页面的日期时间控件，包括日历以及浏览器原生的时间选择器，并支持时、分、秒精度。
 
-## Installation
+## 安装方法
 
-### Prerequisite: admin asset permissions
+### 前置步骤：设置后台静态资源权限
 
-SmartExpiry updates Xboard's compiled admin assets during installation. Before uploading the plugin, make the admin asset directory writable by the PHP-FPM user. The following example uses the common `www:www` account; replace it if your PHP-FPM service runs as another user.
+SmartExpiry 在安装期间需要更新 Xboard 已编译的后台静态资源。上传插件前，请确保 PHP-FPM 运行用户对后台静态资源目录拥有写入权限。以下示例使用常见的 `www:www` 用户和用户组；如果你的 PHP-FPM 使用其他账户，请按实际情况替换。
 
 ```bash
 cd /path/to/xboard
@@ -23,7 +23,7 @@ sudo find public/assets/admin -type d -exec chmod 755 {} +
 sudo find public/assets/admin -type f -exec chmod 644 {} +
 ```
 
-Verify write access before installation:
+安装前可使用以下命令验证写入权限：
 
 ```bash
 sudo -u www test -w public/assets/admin/locales/en-US.js \
@@ -31,17 +31,19 @@ sudo -u www test -w public/assets/admin/locales/en-US.js \
   || echo "Not writable"
 ```
 
-Do not use `chmod -R 777`. To identify the actual PHP-FPM account when it is not `www`, inspect the service processes with `ps aux | grep '[p]hp-fpm'`.
+请勿使用 `chmod -R 777`。如果 PHP-FPM 运行用户不是 `www`，可执行 `ps aux | grep '[p]hp-fpm'` 查看实际运行账户。
 
-1. Download the `SmartExpiry-1.1.1-unlocked.zip` asset from the GitHub Release.
-2. Upload it on Xboard's plugin management page.
-3. Install and enable `smart_expiry`. Uploading this version over an installed older release runs Xboard's normal plugin update flow.
+1. 从 GitHub Release 下载 `SmartExpiry-1.1.1-unlocked.zip`。
+2. 在 Xboard 插件管理页面上传安装包。
+3. 安装并启用 `smart_expiry`。如果已安装旧版本，直接上传此版本会进入 Xboard 的常规插件更新流程。
 
-The PHP process must be able to write the active files under `public/assets/admin`. Keep a backup or filesystem snapshot before installation because this Xboard release exposes no frontend plugin hook and SmartExpiry must bridge the compiled admin bundle.
+PHP 进程必须能够写入 `public/assets/admin` 下当前正在使用的文件。建议安装前创建备份或文件系统快照。由于当前 Xboard 未提供前端插件钩子，SmartExpiry 需要对已编译的后台资源进行桥接修改。
 
-“Permanent” on Create User is only the UI wording for Xboard's original permanent action. It still writes `null`; no replacement timestamp or new persistence rule is introduced.
+## 使用说明
 
-Every shortcut reads the live `expired_at` form value and applies one shared rule:
+创建用户页面中的“永久”仅用于替换 Xboard 原有永久操作的界面文案，写入值仍为 `null`，不会生成替代时间戳，也不会引入新的持久化规则。
+
+每个到期时间快捷按钮都会读取表单中最新的 `expired_at` 值，并统一按照以下规则计算：
 
 ```text
 valid(currentExpiry) && currentExpiry > now
@@ -49,6 +51,12 @@ valid(currentExpiry) && currentExpiry > now
     : addMonths(now, months)
 ```
 
-Calendar-month addition clamps month-end dates and preserves hours, minutes, and seconds. Controls update form state only; the normal Save/Create action remains responsible for submitting the user.
+即：当前到期时间有效且晚于现在时，从当前到期时间继续增加月份；否则从现在开始增加月份。
 
-The bridge resolves the active entry bundle from the admin `index.html` and does not enforce an Xboard commit or SHA-256 version lock. Exact unique structural anchors are still required before any write. It recognizes unpatched, SmartExpiry v1, SmartExpiry v2, and partially patched states by markers; partial states are rejected. Failed multi-file writes restore files already changed in that attempt.
+按自然月计算时会自动处理月末日期，并保留小时、分钟和秒。快捷控件只更新表单状态，用户仍需点击原有的“保存”或“创建”按钮提交。
+
+## 兼容与安全机制
+
+桥接程序会从后台 `index.html` 自动解析当前生效的入口文件，不再检查 Xboard 的 Git 提交版本或 SHA-256 哈希。为避免错误修改，写入前仍要求所有结构锚点准确且唯一。
+
+程序通过标记识别未修改、SmartExpiry v1、SmartExpiry v2 以及部分修改等状态；检测到部分修改时会拒绝继续处理。如果多文件写入过程中发生失败，本次操作中已经改动的文件会自动恢复。
