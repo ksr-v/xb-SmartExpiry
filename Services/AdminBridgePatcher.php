@@ -6,7 +6,8 @@ use RuntimeException;
 
 final class AdminBridgePatcher
 {
-    public const MARKER = 'smart-expiry-v6';
+    public const MARKER = 'smart-expiry-v7';
+    public const V6_MARKER = 'smart-expiry-v6';
     public const V5_MARKER = 'smart-expiry-v5';
     public const V4_MARKER = 'smart-expiry-v4';
     public const V3_MARKER = 'smart-expiry-v3';
@@ -26,7 +27,7 @@ final class AdminBridgePatcher
     public function apply(): string
     {
         [$paths, $state] = $this->validateFiles();
-        if ($state === 'v6') {
+        if ($state === 'v7') {
             return 'already patched';
         }
 
@@ -46,7 +47,10 @@ final class AdminBridgePatcher
                 if (in_array($state, ['source', 'v1', 'v2', 'v3', 'v4'], true)) {
                     $content = $this->patchV5Content($relative, $content);
                 }
-                $patched[$relative] = $this->patchV6Content($relative, $content);
+                if (in_array($state, ['source', 'v1', 'v2', 'v3', 'v4', 'v5'], true)) {
+                    $content = $this->patchV6Content($relative, $content);
+                }
+                $patched[$relative] = $this->patchV7Content($relative, $content);
                 continue;
             }
             if ($state === 'source') {
@@ -64,7 +68,10 @@ final class AdminBridgePatcher
             if (in_array($state, ['source', 'v1', 'v2', 'v3', 'v4'], true)) {
                 $content = $this->patchV5Content($relative, $content);
             }
-            $patched[$relative] = $this->patchV6Content($relative, $content);
+            if (in_array($state, ['source', 'v1', 'v2', 'v3', 'v4', 'v5'], true)) {
+                $content = $this->patchV6Content($relative, $content);
+            }
+            $patched[$relative] = $this->patchV7Content($relative, $content);
         }
 
         $this->writeAllOrRestore($paths, $patched);
@@ -111,12 +118,14 @@ final class AdminBridgePatcher
 
         $bridgeContents = array_intersect_key($contents, array_flip($bridgeFiles));
         $fileCount = count($bridgeContents);
+        $v7Count = 0;
         $v6Count = 0;
         $v5Count = 0;
         $v4Count = 0;
         $v3Count = 0;
         $v2Count = 0;
         foreach ($bridgeContents as $relative => $content) {
+            $v7Count += $this->hasV7Marker($relative, $content) ? 1 : 0;
             $v6Count += $this->hasV6Marker($relative, $content) ? 1 : 0;
             $v5Count += $this->hasV5Marker($relative, $content) ? 1 : 0;
             $v4Count += $this->hasV4Marker($relative, $content) ? 1 : 0;
@@ -124,28 +133,31 @@ final class AdminBridgePatcher
             $v2Count += $this->hasV2Marker($relative, $content) ? 1 : 0;
         }
         $v1Count = count(array_filter($bridgeContents, static fn (string $content): bool => str_contains($content, self::LEGACY_MARKER)));
-        if ($v6Count === $fileCount && $v5Count === 0 && $v4Count === 0 && $v3Count === 0 && $v2Count === 0 && $v1Count === 0) {
+        if ($v7Count === $fileCount && $v6Count === 0 && $v5Count === 0 && $v4Count === 0 && $v3Count === 0 && $v2Count === 0 && $v1Count === 0) {
             if (!str_contains($indexContent, '?v=' . self::MARKER)) {
                 throw new RuntimeException('SmartExpiry detected a partially patched admin build. No changes were applied.');
             }
+            return [$paths, 'v7'];
+        }
+        if ($v6Count === $fileCount && $v7Count === 0 && $v5Count === 0 && $v4Count === 0 && $v3Count === 0 && $v2Count === 0 && $v1Count === 0) {
             return [$paths, 'v6'];
         }
-        if ($v5Count === $fileCount && $v6Count === 0 && $v4Count === 0 && $v3Count === 0 && $v2Count === 0 && $v1Count === 0) {
+        if ($v5Count === $fileCount && $v7Count === 0 && $v6Count === 0 && $v4Count === 0 && $v3Count === 0 && $v2Count === 0 && $v1Count === 0) {
             return [$paths, 'v5'];
         }
-        if ($v4Count === $fileCount && $v6Count === 0 && $v5Count === 0 && $v3Count === 0 && $v2Count === 0 && $v1Count === 0) {
+        if ($v4Count === $fileCount && $v7Count === 0 && $v6Count === 0 && $v5Count === 0 && $v3Count === 0 && $v2Count === 0 && $v1Count === 0) {
             return [$paths, 'v4'];
         }
-        if ($v3Count === $fileCount && $v6Count === 0 && $v5Count === 0 && $v4Count === 0 && $v2Count === 0 && $v1Count === 0) {
+        if ($v3Count === $fileCount && $v7Count === 0 && $v6Count === 0 && $v5Count === 0 && $v4Count === 0 && $v2Count === 0 && $v1Count === 0) {
             return [$paths, 'v3'];
         }
-        if ($v2Count === $fileCount && $v6Count === 0 && $v5Count === 0 && $v4Count === 0 && $v3Count === 0 && $v1Count === 0) {
+        if ($v2Count === $fileCount && $v7Count === 0 && $v6Count === 0 && $v5Count === 0 && $v4Count === 0 && $v3Count === 0 && $v1Count === 0) {
             return [$paths, 'v2'];
         }
-        if ($v1Count === $fileCount && $v6Count === 0 && $v5Count === 0 && $v4Count === 0 && $v2Count === 0 && $v3Count === 0) {
+        if ($v1Count === $fileCount && $v7Count === 0 && $v6Count === 0 && $v5Count === 0 && $v4Count === 0 && $v2Count === 0 && $v3Count === 0) {
             return [$paths, 'v1'];
         }
-        if ($v1Count === 0 && $v2Count === 0 && $v3Count === 0 && $v4Count === 0 && $v5Count === 0 && $v6Count === 0) {
+        if ($v1Count === 0 && $v2Count === 0 && $v3Count === 0 && $v4Count === 0 && $v5Count === 0 && $v6Count === 0 && $v7Count === 0) {
             return [$paths, 'source'];
         }
         throw new RuntimeException('SmartExpiry detected a partially patched admin build. No changes were applied.');
@@ -472,7 +484,7 @@ final class AdminBridgePatcher
     {
         if ($relative === 'public/assets/admin/index.html') {
             $pattern = '~(\./(?:locales/(?:en-US|ru-RU|zh-CN)\.js|assets/index-[A-Za-z0-9_-]+\.js))(?:\?v=smart-expiry-v\d+)?~';
-            $patched = preg_replace($pattern, '$1?v=' . self::MARKER, $content, -1, $count);
+            $patched = preg_replace($pattern, '$1?v=' . self::V6_MARKER, $content, -1, $count);
             if ($patched === null || $count !== 4) {
                 throw new RuntimeException('SmartExpiry could not update the admin asset cache keys. No changes were applied.');
             }
@@ -485,7 +497,7 @@ final class AdminBridgePatcher
                 throw $this->unsupported();
             }
 
-            return str_replace(self::V5_MARKER, self::MARKER, $content);
+            return str_replace(self::V5_MARKER, self::V6_MARKER, $content);
         }
 
         $content = $this->replaceExactlyOnce(
@@ -546,6 +558,64 @@ final class AdminBridgePatcher
             'Q.jsx(B$t,{className:"w-auto p-0",align:"start",side:"top",sideOffset:4,onInteractOutside:e=>{e.preventDefault()},onEscapeKeyDown:e=>{e.preventDefault()},children:',
             'Q.jsx(B$t,{className:"w-auto p-0",align:"center",side:"bottom",sideOffset:8,collisionPadding:8,style:{width:"min(22rem, calc(100vw - 2rem))",maxHeight:"calc(100vh - 2rem)",overflowY:"auto",overscrollBehavior:"contain",touchAction:"pan-y"},children:',
             'create-user mobile expiry popover',
+        );
+        $content = substr($content, 0, $createStart) . $createUi . substr($content, $createEnd);
+
+        return $content;
+    }
+
+    private function patchV7Content(string $relative, string $content): string
+    {
+        if ($relative === 'public/assets/admin/index.html') {
+            $pattern = '~(\./(?:locales/(?:en-US|ru-RU|zh-CN)\.js|assets/index-[A-Za-z0-9_-]+\.js))(?:\?v=smart-expiry-v\d+)?~';
+            $patched = preg_replace($pattern, '$1?v=' . self::MARKER, $content, -1, $count);
+            if ($patched === null || $count !== 4) {
+                throw new RuntimeException('SmartExpiry could not update the admin asset cache keys. No changes were applied.');
+            }
+
+            return $patched;
+        }
+
+        if (!$this->isAdminBundle($relative)) {
+            if (!str_contains($content, self::V6_MARKER)) {
+                throw $this->unsupported();
+            }
+
+            return str_replace(self::V6_MARKER, self::MARKER, $content);
+        }
+
+        $content = $this->replaceExactlyOnce(
+            $content,
+            '/*smart-expiry-edit-v6*/',
+            '/*smart-expiry-edit-v7*/',
+            'edit-user v7 marker',
+        );
+        $content = $this->replaceExactlyOnce(
+            $content,
+            '/*smart-expiry-create-v6*/',
+            '/*smart-expiry-create-v7*/',
+            'create-user v7 marker',
+        );
+
+        $createStart = strpos($content, 'Q.jsxs(P$t,{open:d,onOpenChange:u');
+        $createEnd = $createStart === false
+            ? false
+            : strpos($content, 'Q.jsx(TYt,{control:r.control,name:"plan_id"', $createStart);
+        if ($createStart === false || $createEnd === false || $createEnd <= $createStart) {
+            throw new RuntimeException('SmartExpiry could not isolate the create-user expiry controls. No changes were applied.');
+        }
+        $createUi = substr($content, $createStart, $createEnd - $createStart);
+        $createUi = $this->replaceExactlyOnce(
+            $createUi,
+            'Q.jsx("div",{className:"rounded-md border",children:Q.jsx(o$t,{mode:"single",selected:r.watch("expired_at")',
+            'Q.jsx("div",{className:"hidden rounded-md border sm:block",children:Q.jsx(o$t,{mode:"single",selected:r.watch("expired_at")',
+            'create-user desktop-only calendar',
+        );
+        $createUi = $this->replaceExactlyOnce(
+            $createUi,
+            'maxHeight:"calc(100vh - 2rem)",overflowY:"auto",overscrollBehavior:"contain",touchAction:"pan-y"',
+            'maxHeight:"calc(100dvh - 2rem)",overflowY:"auto",overscrollBehavior:"contain",touchAction:"pan-y",WebkitOverflowScrolling:"touch"',
+            'create-user mobile scroll behavior',
         );
         $content = substr($content, 0, $createStart) . $createUi . substr($content, $createEnd);
 
@@ -640,6 +710,16 @@ final class AdminBridgePatcher
         if ($this->isAdminBundle($relative)) {
             return str_contains($content, 'smart-expiry-edit-v6')
                 && str_contains($content, 'smart-expiry-create-v6');
+        }
+
+        return str_contains($content, self::V6_MARKER);
+    }
+
+    private function hasV7Marker(string $relative, string $content): bool
+    {
+        if ($this->isAdminBundle($relative)) {
+            return str_contains($content, 'smart-expiry-edit-v7')
+                && str_contains($content, 'smart-expiry-create-v7');
         }
 
         return str_contains($content, self::MARKER);
