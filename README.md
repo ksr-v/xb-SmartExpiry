@@ -11,6 +11,28 @@ Both scenes provide Permanent, 1, 3, 6, 9, and 12 month actions. Create User als
 
 ## Installation
 
+### Prerequisite: admin asset permissions
+
+SmartExpiry updates Xboard's compiled admin assets during installation. Before uploading the plugin, make the admin asset directory writable by the PHP-FPM user. The following example uses the common `www:www` account; replace it if your PHP-FPM service runs as another user.
+
+```bash
+cd /path/to/xboard
+
+sudo chown -R www:www public/assets/admin
+sudo find public/assets/admin -type d -exec chmod 755 {} +
+sudo find public/assets/admin -type f -exec chmod 644 {} +
+```
+
+Verify write access before installation:
+
+```bash
+sudo -u www test -w public/assets/admin/locales/en-US.js \
+  && echo "Writable" \
+  || echo "Not writable"
+```
+
+Do not use `chmod -R 777`. To identify the actual PHP-FPM account when it is not `www`, inspect the service processes with `ps aux | grep '[p]hp-fpm'`.
+
 1. Download the `SmartExpiry-1.1.1-unlocked.zip` asset from the GitHub Release.
 2. Upload it on Xboard's plugin management page.
 3. Install and enable `smart_expiry`. Uploading this version over an installed older release runs Xboard's normal plugin update flow.
