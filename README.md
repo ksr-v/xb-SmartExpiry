@@ -11,6 +11,8 @@ SmartExpiry 为 Xboard 后台的用户表单添加安全、便捷的按自然月
 
 ## 安装方法
 
+本仓库发布的 ZIP 是完整插件安装包，不是增量补丁。它既可以安装到从未安装过 SmartExpiry 的纯净 Xboard，也可以覆盖旧版进行升级；首次安装不需要预先安装 v1.0、v1.1.1 或任何其他版本。
+
 ### 前置步骤：设置后台静态资源权限
 
 SmartExpiry 在安装期间需要更新 Xboard 已编译的后台静态资源。上传插件前，请确保 PHP-FPM 运行用户对后台静态资源目录拥有写入权限。以下示例使用常见的 `www:www` 用户和用户组；如果你的 PHP-FPM 使用其他账户，请按实际情况替换。
@@ -33,7 +35,7 @@ sudo -u www test -w public/assets/admin/locales/en-US.js \
 
 请勿使用 `chmod -R 777`。如果 PHP-FPM 运行用户不是 `www`，可执行 `ps aux | grep '[p]hp-fpm'` 查看实际运行账户。
 
-1. 从 GitHub Release 下载 `SmartExpiry-1.1.2-unlocked.zip`。
+1. 从 GitHub Release 下载 `SmartExpiry-1.1.2-full.zip`。
 2. 在 Xboard 插件管理页面上传安装包。
 3. 安装并启用 `smart_expiry`。如果已安装旧版本，直接上传此版本会进入 Xboard 的常规插件更新流程。
 
