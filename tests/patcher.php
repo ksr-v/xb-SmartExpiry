@@ -26,6 +26,37 @@ try {
     }
 
     $patcher = new AdminBridgePatcher($fixture);
+    if ($patcher->status() !== 'v7' || $patcher->remove() !== 'removed' || $patcher->remove() !== 'not patched') {
+        throw new RuntimeException('Remove status or idempotency check failed.');
+    }
+    $clean = [];
+    foreach ($files as $relative) {
+        $clean[$relative] = file_get_contents($fixture . '/' . $relative);
+    }
+    if ($patcher->apply() !== 'patched' || $patcher->remove() !== 'removed') {
+        throw new RuntimeException('Clean apply/remove cycle failed.');
+    }
+    foreach ($files as $relative) {
+        if (file_get_contents($fixture . '/' . $relative) !== $clean[$relative]) {
+            throw new RuntimeException("Apply/remove did not restore {$relative} byte-for-byte.");
+        }
+        file_put_contents($fixture . '/' . $relative, $clean[$relative] . "\n/*qrcodeextend-foreign-fixture:{$relative}*/\n");
+    }
+    $foreign = [];
+    foreach ($files as $relative) {
+        $foreign[$relative] = file_get_contents($fixture . '/' . $relative);
+    }
+    if ($patcher->apply() !== 'patched' || $patcher->apply() !== 'already patched' || $patcher->remove() !== 'removed') {
+        throw new RuntimeException('Foreign patch composition cycle failed.');
+    }
+    foreach ($files as $relative) {
+        if (file_get_contents($fixture . '/' . $relative) !== $foreign[$relative]) {
+            throw new RuntimeException("Foreign patch was not preserved in {$relative}.");
+        }
+    }
+    if ($patcher->apply() !== 'patched') {
+        throw new RuntimeException('Re-enable after cleanup failed.');
+    }
     $firstResult = $patcher->apply();
     if (!in_array($firstResult, ['upgraded from v2', 'upgraded from v3', 'upgraded from v4', 'upgraded from v5', 'upgraded from v6', 'already patched'], true)
         || $patcher->apply() !== 'already patched'

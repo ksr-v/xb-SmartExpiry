@@ -24,6 +24,19 @@ class Plugin extends AbstractPlugin
         $this->applyAdminBridge();
     }
 
+    public function cleanup(): void
+    {
+        require_once $this->basePath . '/Services/AdminBridgePatcher.php';
+
+        try {
+            $result = (new AdminBridgePatcher(base_path()))->remove();
+            Log::info('SmartExpiry admin bridge cleanup status: ' . $result);
+        } catch (RuntimeException $exception) {
+            Log::error($exception->getMessage());
+            throw $exception;
+        }
+    }
+
     private function applyAdminBridge(): void
     {
         require_once $this->basePath . '/Services/AdminBridgePatcher.php';

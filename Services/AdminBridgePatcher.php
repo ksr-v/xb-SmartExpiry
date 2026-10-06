@@ -26,6 +26,11 @@ final class AdminBridgePatcher
 
     public function apply(): string
     {
+        return $this->withLock(fn (): string => $this->applyUnlocked());
+    }
+
+    private function applyUnlocked(): string
+    {
         [$paths, $state] = $this->validateFiles();
         if ($state === 'v7') {
             return 'already patched';
@@ -74,9 +79,69 @@ final class AdminBridgePatcher
             $patched[$relative] = $this->patchV7Content($relative, $content);
         }
 
-        $this->writeAllOrRestore($paths, $patched);
+        $this->writeAllOrRestore($paths, $patched, 'v7');
 
         return $state === 'source' ? 'patched' : 'upgraded from ' . $state;
+    }
+
+    public function status(): string
+    {
+        return $this->withLock(function (): string {
+            [, $state] = $this->validateFiles();
+            return $state;
+        });
+    }
+
+    public function remove(): string
+    {
+        return $this->withLock(function (): string {
+            [$paths, $state] = $this->validateFiles();
+            if ($state === 'source') {
+                return 'not patched';
+            }
+            if ($state !== 'v7') {
+                throw new RuntimeException('SmartExpiry cleanup requires a complete current patch. No changes were applied.');
+            }
+
+            $cleaned = [];
+            foreach ($paths as $relative => $path) {
+                $content = file_get_contents($path);
+                if ($content === false) {
+                    throw $this->unsupported();
+                }
+                $cleaned[$relative] = $this->removeV7Content($relative, $content);
+            }
+            $this->writeAllOrRestore($paths, $cleaned, 'source');
+
+            [, $after] = $this->validateFiles();
+            if ($after !== 'source') {
+                throw new RuntimeException('SmartExpiry cleanup verification failed.');
+            }
+            return 'removed';
+        });
+    }
+
+    private function withLock(callable $operation): mixed
+    {
+        $lockPath = $this->basePath . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
+            . 'framework' . DIRECTORY_SEPARATOR . 'xboard-admin-patch.lock';
+        $directory = dirname($lockPath);
+        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+            throw new RuntimeException('SmartExpiry could not create the shared admin patch lock directory.');
+        }
+        $handle = fopen($lockPath, 'c+');
+        if ($handle === false || !flock($handle, LOCK_EX)) {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+            throw new RuntimeException('SmartExpiry could not acquire the shared admin patch lock.');
+        }
+        try {
+            return $operation();
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     /** @return array{array<string, string>, string} */
@@ -163,7 +228,7 @@ final class AdminBridgePatcher
         throw new RuntimeException('SmartExpiry detected a partially patched admin build. No changes were applied.');
     }
 
-    private function patchV1Content(string $relative, string $content): string
+    private function patchV1Content(string $relative, string $content, bool $reverse = false): string
     {
         if ($this->isAdminBundle($relative)) {
             $functionAnchor = 'u=Nv({resolver:Mv(q8t)});return H.useEffect';
@@ -178,6 +243,11 @@ final class AdminBridgePatcher
                 . $button(6, 'expire_time_6months') . ','
                 . $button(9, 'expire_time_9months') . ','
                 . $button(12, 'expire_time_1year') . ']})';
+
+            if ($reverse) {
+                [$functionAnchor, $functionReplacement] = [$functionReplacement, $functionAnchor];
+                [$buttonsAnchor, $buttonsReplacement] = [$buttonsReplacement, $buttonsAnchor];
+            }
 
             $content = $this->replaceExactlyOnce($content, $functionAnchor, $functionReplacement, 'renewal function');
             return $this->replaceExactlyOnce($content, $buttonsAnchor, $buttonsReplacement, 'expiry shortcut buttons');
@@ -207,15 +277,21 @@ final class AdminBridgePatcher
         return substr($content, 0, $lineEnd) . $addition . substr($content, $lineEnd);
     }
 
-    private function patchV2Content(string $relative, string $content): string
+    private function patchV2Content(string $relative, string $content, bool $reverse = false): string
     {
         if ($this->isAdminBundle($relative)) {
             $editAnchor = 'h=e=>{const t=new Date,n=Number(u.getValues("expired_at")),i=Number.isFinite(n)&&n>t.getTime()/1e3?new Date(1e3*n):t,r=i.getDate();i.setDate(1),i.setMonth(i.getMonth()+e),i.setDate(Math.min(r,new Date(i.getFullYear(),i.getMonth()+1,0).getDate())),i.setHours(23,59,59,999),u.setValue("expired_at",Math.floor(i.getTime()/1e3),{shouldDirty:!0,shouldValidate:!0}),o(!1)};/*smart-expiry-v1*/';
             $editReplacement = 'h=e=>{const t=new Date,n=Number(u.getValues("expired_at")),i=Number.isFinite(n)&&n>t.getTime()/1e3?new Date(1e3*n):t,r=i.getDate();i.setDate(1),i.setMonth(i.getMonth()+e),i.setDate(Math.min(r,new Date(i.getFullYear(),i.getMonth()+1,0).getDate())),u.setValue("expired_at",Math.floor(i.getTime()/1e3),{shouldDirty:!0,shouldValidate:!0}),o(!1)};/*smart-expiry-edit-v2*/';
+            if ($reverse) {
+                [$editAnchor, $editReplacement] = [$editReplacement, $editAnchor];
+            }
             $content = $this->replaceExactlyOnce($content, $editAnchor, $editReplacement, 'edit-user renewal function');
 
             $createFunctionAnchor = '[s,o]=H.useState([]),[a,l]=H.useState(!1);H.useEffect';
             $createFunctionReplacement = '[s,o]=H.useState([]),[a,l]=H.useState(!1),[d,u]=H.useState(!1),h=e=>{const t=new Date,n=Number(r.getValues("expired_at")),i=Number.isFinite(n)&&n>t.getTime()/1e3?new Date(1e3*n):t,s=i.getDate();i.setDate(1),i.setMonth(i.getMonth()+e),i.setDate(Math.min(s,new Date(i.getFullYear(),i.getMonth()+1,0).getDate())),r.setValue("expired_at",Math.floor(i.getTime()/1e3),{shouldDirty:!0,shouldValidate:!0}),u(!1)};/*smart-expiry-create-v2*/H.useEffect';
+            if ($reverse) {
+                [$createFunctionAnchor, $createFunctionReplacement] = [$createFunctionReplacement, $createFunctionAnchor];
+            }
             $content = $this->replaceExactlyOnce($content, $createFunctionAnchor, $createFunctionReplacement, 'create-user renewal function');
 
             $createPickerAnchor = 'Q.jsxs(P$t,{children:[Q.jsx(j$t,{asChild:!0,children:Q.jsx(Yy,{children:Q.jsxs(Lf,{variant:"outline",className:Im("h-9 w-full px-3 text-left font-mono text-xs font-normal",!r.watch("expired_at")&&"text-muted-foreground"),children:[r.watch("expired_at")?SS(r.watch("expired_at")):Q.jsx("span",{children:t("generate.form.expire_time_placeholder")}),Q.jsx(vat,{className:"ml-auto h-3.5 w-3.5 opacity-50"})]})})}),Q.jsxs(B$t,{className:"flex w-auto flex-col space-y-2 p-2",children:[Q.jsx(R$t,{asChild:!0,children:Q.jsx(Lf,{variant:"outline",className:"h-8 w-full font-mono text-xs",onClick:()=>{r.setValue("expired_at",null)},children:t("generate.form.permanent")})}),Q.jsx("div",{className:"rounded-md border",children:Q.jsx(o$t,{mode:"single",selected:r.watch("expired_at")?new Date(1e3*r.watch("expired_at")):void 0,onSelect:e=>{e&&r.setValue("expired_at",e?.getTime()/1e3)}})})]})]})';
@@ -228,6 +304,10 @@ final class AdminBridgePatcher
                 . $button(9, 'expire_time_9months') . ','
                 . $button(12, 'expire_time_1year')
                 . ']}),Q.jsx("div",{className:"rounded-md border",children:Q.jsx(o$t,{mode:"single",selected:r.watch("expired_at")?new Date(1e3*r.watch("expired_at")):void 0,onSelect:e=>{if(e){const t=new Date(r.getValues("expired_at")?1e3*r.getValues("expired_at"):Date.now());e.setHours(t.getHours(),t.getMinutes(),t.getSeconds()),r.setValue("expired_at",Math.floor(e.getTime()/1e3),{shouldDirty:!0,shouldValidate:!0})}},disabled:e=>e<new Date,initialFocus:!0,className:"rounded-md border-none"})}),Q.jsxs("div",{className:"space-y-1.5",children:[Q.jsxs("div",{className:"flex items-center justify-between",children:[Q.jsx("div",{className:"text-sm font-medium text-muted-foreground",children:t("generate.form.expire_time_specific")}),Q.jsx(Lf,{type:"button",variant:"ghost",size:"sm",onClick:()=>{const e=new Date;e.setHours(23,59,59,999),r.setValue("expired_at",Math.floor(e.getTime()/1e3),{shouldDirty:!0,shouldValidate:!0})},className:"h-6 px-2 text-xs",children:t("generate.form.expire_time_today")})]}),Q.jsxs("div",{className:"flex gap-2",children:[Q.jsx(u8e,{type:"datetime-local",step:"1",value:SS(r.watch("expired_at"),"yyyy-MM-dd\'T\'HH:mm:ss"),onChange:e=>{const t=new Date(e.target.value);isNaN(t.getTime())||r.setValue("expired_at",Math.floor(t.getTime()/1e3),{shouldDirty:!0,shouldValidate:!0})},className:"flex-1"}),Q.jsx(Lf,{type:"button",variant:"outline",onClick:()=>u(!1),children:t("generate.form.expire_time_confirm")})]})]})]})})]})';
+
+            if ($reverse) {
+                [$createPickerAnchor, $createPickerReplacement] = [$createPickerReplacement, $createPickerAnchor];
+            }
 
             return $this->replaceExactlyOnce($content, $createPickerAnchor, $createPickerReplacement, 'create-user expiry picker');
         }
@@ -622,11 +702,132 @@ final class AdminBridgePatcher
         return $content;
     }
 
+    private function removeV7Content(string $relative, string $content): string
+    {
+        if ($relative === 'public/assets/admin/index.html') {
+            $pattern = '~(\./(?:locales/(?:en-US|ru-RU|zh-CN)\.js|assets/index-[A-Za-z0-9_-]+\.js))\?v=' . preg_quote(self::MARKER, '~') . '~';
+            $cleaned = preg_replace($pattern, '$1', $content, -1, $count);
+            if ($cleaned === null || $count !== 4) {
+                throw new RuntimeException('SmartExpiry could not remove its admin asset cache keys. No changes were applied.');
+            }
+            return $cleaned;
+        }
+
+        if (!$this->isAdminBundle($relative)) {
+            $lines = preg_split('/(?<=\n)/', $content);
+            if ($lines === false) {
+                throw $this->unsupported();
+            }
+            $removed = 0;
+            foreach ($lines as $key => $line) {
+                if (str_contains($line, '"smart_expiry_marker')) {
+                    unset($lines[$key]);
+                    $removed++;
+                }
+            }
+            if ($removed !== 2) {
+                throw new RuntimeException("SmartExpiry could not identify its locale entries in {$relative}. No changes were applied.");
+            }
+            $content = implode('', $lines);
+            $originalPermanent = match ($relative) {
+                'public/assets/admin/locales/en-US.js' => 'Permanent',
+                'public/assets/admin/locales/ru-RU.js' => 'Бессрочно',
+                'public/assets/admin/locales/zh-CN.js' => '长期有效',
+                default => throw $this->unsupported(),
+            };
+            $generatedPermanent = match ($relative) {
+                'public/assets/admin/locales/en-US.js' => 'Permanent',
+                'public/assets/admin/locales/ru-RU.js' => 'Навсегда',
+                'public/assets/admin/locales/zh-CN.js' => '永久',
+                default => throw $this->unsupported(),
+            };
+            $blockPattern = '~(        "permanent": )"' . preg_quote($generatedPermanent, '~') . '",\R'
+                . '(?:        "expire_time_(?:1month|3months|6months|9months|1year|specific|today|confirm)": .*\R){8}~u';
+            $content = preg_replace($blockPattern, '$1"' . $originalPermanent . '",' . "\n", $content, 1, $count);
+            if ($content === null || $count !== 1) {
+                throw new RuntimeException("SmartExpiry could not remove its generated locale entries in {$relative}. No changes were applied.");
+            }
+            $editPattern = '~(        "expire_time_3months": .*\R)'
+                . '(?:        "expire_time_(?:6months|9months|1year)": .*\R){3}~u';
+            $content = preg_replace($editPattern, '$1', $content, 1, $count);
+            if ($content === null || $count !== 1) {
+                throw new RuntimeException("SmartExpiry could not remove its edit locale entries in {$relative}. No changes were applied.");
+            }
+            return $content;
+        }
+
+        return $this->removeBundleContent($content);
+    }
+
+    private function removeBundleContent(string $content): string
+    {
+        $replace = function (string $owned, string $original, string $name) use (&$content): void {
+            $content = $this->replaceExactlyOnce($content, $owned, $original, $name);
+        };
+
+        $replace('/*smart-expiry-edit-v7*/', '/*smart-expiry-edit-v6*/', 'edit-user v7 marker');
+        $replace('/*smart-expiry-create-v7*/', '/*smart-expiry-create-v6*/', 'create-user v7 marker');
+        $replace('className:"hidden rounded-md border sm:block"', 'className:"rounded-md border"', 'desktop-only calendar');
+        $replace('maxHeight:"calc(100dvh - 2rem)",overflowY:"auto",overscrollBehavior:"contain",touchAction:"pan-y",WebkitOverflowScrolling:"touch"', 'maxHeight:"calc(100vh - 2rem)",overflowY:"auto",overscrollBehavior:"contain",touchAction:"pan-y"', 'mobile scroll behavior');
+
+        $replace('/*smart-expiry-edit-v6*/', '/*smart-expiry-edit-v5*/', 'edit-user v6 marker');
+        $replace('/*smart-expiry-create-v6*/', '/*smart-expiry-create-v5*/', 'create-user v6 marker');
+        $replace('/*smart-expiry-create-v5*/H.useEffect(()=>{n||u(!1)},[n]);H.useEffect(()=>{n&&RD()', '/*smart-expiry-create-v5*/H.useEffect(()=>{n&&RD()', 'create-user close effect');
+        $replace('Q.jsxs("div",{className:"grid grid-cols-1 gap-4 sm:grid-cols-2",children:[Q.jsx(TYt,{control:r.control,name:"expired_at"', 'Q.jsxs("div",{className:"grid grid-cols-2 gap-4",children:[Q.jsx(TYt,{control:r.control,name:"expired_at"', 'responsive expiry row');
+        $replace('Q.jsx(B$t,{className:"w-auto p-0",align:"center",side:"bottom",sideOffset:8,collisionPadding:8,style:{width:"min(22rem, calc(100vw - 2rem))",maxHeight:"calc(100vh - 2rem)",overflowY:"auto",overscrollBehavior:"contain",touchAction:"pan-y"},children:', 'Q.jsx(B$t,{className:"w-auto p-0",align:"start",side:"top",sideOffset:4,onInteractOutside:e=>{e.preventDefault()},onEscapeKeyDown:e=>{e.preventDefault()},children:', 'mobile expiry popover');
+
+        $replace('/*smart-expiry-edit-v5*/', '/*smart-expiry-edit-v4*/', 'edit-user v5 marker');
+        $replace('/*smart-expiry-create-v5*/', '/*smart-expiry-create-v4*/', 'create-user v5 marker');
+        $content = $this->reverseCurrentFallbacks($content);
+        $replace = function (string $owned, string $original, string $name) use (&$content): void {
+            $content = $this->replaceExactlyOnce($content, $owned, $original, $name);
+        };
+        $replace('/*smart-expiry-edit-v4*/', '/*smart-expiry-edit-v3*/', 'edit-user v4 marker');
+        $replace('/*smart-expiry-create-v4*/', '/*smart-expiry-create-v3*/', 'create-user v4 marker');
+        $content = $this->replaceExactlyOnce($content, '/*smart-expiry-edit-v3*/', '/*smart-expiry-edit-v2*/', 'edit-user v3 marker');
+        $content = $this->replaceExactlyOnce($content, '/*smart-expiry-create-v3*/', '/*smart-expiry-create-v2*/', 'create-user v3 marker');
+        $editGrid = 'Q.jsxs("div",{className:"grid grid-cols-3 gap-2",children:[Q.jsx(Lf,{type:"button",variant:"outline",className:"w-full min-w-0 px-1 text-xs sm:px-3 sm:text-sm",onClick:()=>{t.onChange(null),o(!1)}';
+        $createGrid = 'Q.jsxs("div",{className:"grid grid-cols-3 gap-2",children:[Q.jsx(Lf,{type:"button",variant:"outline",className:"w-full min-w-0 px-1 text-xs sm:px-3 sm:text-sm",onClick:()=>{r.setValue("expired_at",null,{shouldDirty:!0,shouldValidate:!0}),u(!1)}';
+        $content = $this->replaceExactlyOnce($content, $editGrid, str_replace('grid grid-cols-3', 'flex flex-wrap', $editGrid), 'edit button grid');
+        $content = $this->replaceExactlyOnce($content, $createGrid, str_replace('grid grid-cols-3', 'flex flex-wrap', $createGrid), 'create button grid');
+        if (substr_count($content, 'className:"w-full min-w-0 px-1 text-xs sm:px-3 sm:text-sm"') !== 12) {
+            throw new RuntimeException('SmartExpiry could not identify its twelve expiry buttons. No changes were applied.');
+        }
+        $content = str_replace('className:"w-full min-w-0 px-1 text-xs sm:px-3 sm:text-sm"', 'className:"min-w-[5rem] flex-1"', $content);
+        $content = $this->patchV2Content('public/assets/admin/assets/index-owned.js', $content, true);
+        return $this->patchV1Content('public/assets/admin/assets/index-owned.js', $content, true);
+    }
+
+    private function reverseCurrentFallbacks(string $content): string
+    {
+        $keys = [
+            'edit.form.expire_time_6months' => 'e',
+            'edit.form.expire_time_9months' => 'e',
+            'edit.form.expire_time_1year' => 'e',
+            'generate.form.expire_time_1month' => 't',
+            'generate.form.expire_time_3months' => 't',
+            'generate.form.expire_time_6months' => 't',
+            'generate.form.expire_time_9months' => 't',
+            'generate.form.expire_time_1year' => 't',
+            'generate.form.expire_time_specific' => 't',
+            'generate.form.expire_time_today' => 't',
+            'generate.form.expire_time_confirm' => 't',
+        ];
+        foreach ($keys as $key => $translator) {
+            $pattern = '~\(\(\)=>\{const n="' . preg_quote($key, '~') . '".+?:i\}\)\(\)~';
+            $content = preg_replace($pattern, $translator . '("' . $key . '")', $content, 1, $count);
+            if ($content === null || $count !== 1) {
+                throw new RuntimeException("SmartExpiry could not remove its {$key} fallback. No changes were applied.");
+            }
+        }
+        return $content;
+    }
+
     /**
      * @param array<string, string> $paths
      * @param array<string, string> $patched
      */
-    private function writeAllOrRestore(array $paths, array $patched): void
+    private function writeAllOrRestore(array $paths, array $patched, string $expectedState): void
     {
         $originals = [];
         $written = [];
@@ -638,15 +839,49 @@ final class AdminBridgePatcher
                 }
                 $originals[$relative] = $original;
                 $written[] = $relative;
-                if (file_put_contents($paths[$relative], $content, LOCK_EX) === false) {
-                    throw new RuntimeException("SmartExpiry could not write {$relative}.");
+                $this->atomicWrite($paths[$relative], $content, $relative);
+                $verified = file_get_contents($paths[$relative]);
+                if ($verified === false || !hash_equals(hash('sha256', $content), hash('sha256', $verified))) {
+                    throw new RuntimeException("SmartExpiry could not verify {$relative} after writing.");
                 }
+            }
+            [, $actualState] = $this->validateFiles();
+            if ($actualState !== $expectedState) {
+                throw new RuntimeException("SmartExpiry post-write verification expected {$expectedState}, got {$actualState}.");
             }
         } catch (\Throwable $exception) {
             foreach (array_reverse($written) as $relative) {
-                file_put_contents($paths[$relative], $originals[$relative], LOCK_EX);
+                try {
+                    $this->atomicWrite($paths[$relative], $originals[$relative], $relative . ' rollback');
+                } catch (\Throwable) {
+                    // Preserve the original failure; every rollback uses the operation-start snapshot.
+                }
             }
             throw $exception;
+        }
+    }
+
+    private function atomicWrite(string $path, string $content, string $relative): void
+    {
+        $permissions = fileperms($path);
+        $temporary = tempnam(dirname($path), '.smart-expiry-');
+        if ($temporary === false) {
+            throw new RuntimeException("SmartExpiry could not create a temporary file for {$relative}.");
+        }
+        try {
+            if (file_put_contents($temporary, $content) !== strlen($content)) {
+                throw new RuntimeException("SmartExpiry could not write {$relative}.");
+            }
+            if ($permissions !== false) {
+                @chmod($temporary, $permissions & 0777);
+            }
+            if (!rename($temporary, $path)) {
+                throw new RuntimeException("SmartExpiry could not atomically replace {$relative}.");
+            }
+        } finally {
+            if (is_file($temporary)) {
+                @unlink($temporary);
+            }
         }
     }
 

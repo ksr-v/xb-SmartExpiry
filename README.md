@@ -1,5 +1,22 @@
 # SmartExpiry
 
+## Plugin lifecycle and coexistence (v1.2.0)
+
+SmartExpiry follows Xboard's native plugin lifecycle. `install()` and `boot()` ensure that the
+Admin bridge is applied, `update()` safely upgrades the SmartExpiry-owned patch, and `cleanup()`
+removes it. Xboard calls `cleanup()` when a plugin is disabled (and disables before uninstalling),
+so disable → enable is supported without any Xboard core changes.
+
+Cleanup is ownership-based: it reverses only the exact SmartExpiry markers, locale entries, UI
+fragments, and cache-key query parameters. It never restores a complete historical Admin file.
+Foreign modifications, including independent QRCodeExtend-style changes, are preserved byte for
+byte. All shared Admin-file operations use the cross-plugin
+`storage/framework/xboard-admin-patch.lock` exclusive lock and transactional atomic writes.
+
+Unknown or partial SmartExpiry states fail closed. Compatibility is limited to the Xboard Admin
+bundle structure whose unique anchors are exercised by this release's tests; other Admin builds
+are not claimed as supported.
+
 SmartExpiry 为 Xboard 后台的用户表单添加安全、便捷的按自然月调整到期时间功能。
 
 ## 支持场景
@@ -35,7 +52,7 @@ sudo -u www test -w public/assets/admin/locales/en-US.js \
 
 请勿使用 `chmod -R 777`。如果 PHP-FPM 运行用户不是 `www`，可执行 `ps aux | grep '[p]hp-fpm'` 查看实际运行账户。
 
-1. 从 GitHub Release 下载 `SmartExpiry-1.1.6-full.zip`。
+1. 从 GitHub Release 下载 `SmartExpiry-1.2.0-full.zip`。
 2. 在 Xboard 插件管理页面上传安装包。
 3. 安装并启用 `smart_expiry`。如果已安装旧版本，直接上传此版本会进入 Xboard 的常规插件更新流程。
 
