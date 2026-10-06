@@ -27,7 +27,7 @@ try {
 
     $patcher = new AdminBridgePatcher($fixture);
     $firstResult = $patcher->apply();
-    if (!in_array($firstResult, ['upgraded from v2', 'upgraded from v3', 'upgraded from v4', 'already patched'], true)
+    if (!in_array($firstResult, ['upgraded from v2', 'upgraded from v3', 'upgraded from v4', 'upgraded from v5', 'already patched'], true)
         || $patcher->apply() !== 'already patched'
     ) {
         throw new RuntimeException('Legacy upgrade or idempotency check failed.');

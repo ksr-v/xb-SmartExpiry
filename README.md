@@ -35,7 +35,7 @@ sudo -u www test -w public/assets/admin/locales/en-US.js \
 
 请勿使用 `chmod -R 777`。如果 PHP-FPM 运行用户不是 `www`，可执行 `ps aux | grep '[p]hp-fpm'` 查看实际运行账户。
 
-1. 从 GitHub Release 下载 `SmartExpiry-1.1.4-full.zip`。
+1. 从 GitHub Release 下载 `SmartExpiry-1.1.5-full.zip`。
 2. 在 Xboard 插件管理页面上传安装包。
 3. 安装并启用 `smart_expiry`。如果已安装旧版本，直接上传此版本会进入 Xboard 的常规插件更新流程。
 
@@ -61,6 +61,6 @@ valid(currentExpiry) && currentExpiry > now
 
 桥接程序会从后台 `index.html` 自动解析当前生效的入口文件，不再检查 Xboard 的 Git 提交版本或 SHA-256 哈希。为避免错误修改，写入前仍要求所有结构锚点准确且唯一。
 
-程序通过标记识别未修改、SmartExpiry v1 至 SmartExpiry v5 以及部分修改等状态；检测到部分修改时会拒绝继续处理。如果多文件写入过程中发生失败，本次操作中已经改动的文件会自动恢复。
+程序通过标记识别未修改、SmartExpiry v1 至 SmartExpiry v6 以及部分修改等状态；检测到部分修改时会拒绝继续处理。如果多文件写入过程中发生失败，本次操作中已经改动的文件会自动恢复。
 
-插件会为后台入口脚本和语言文件添加版本查询参数，以避免浏览器继续使用旧缓存。新增文案会执行显式键名检测并提供中、英、俄三种回退，即使语言资源不可用，也不会显示 `edit.form...` 或 `generate.form...` 翻译键。v1.1.4 修复了 v1.1.3 在编辑用户页面触发的 `e is not a function` 错误，并可直接修复卸载插件后仍然残留的 v4 后台资源。
+插件会为后台入口脚本和语言文件添加版本查询参数，以避免浏览器继续使用旧缓存。新增文案会执行显式键名检测并提供中、英、俄三种回退，即使语言资源不可用，也不会显示 `edit.form...` 或 `generate.form...` 翻译键。v1.1.4 修复了编辑用户页面触发的 `e is not a function` 错误。v1.1.5 改用稳定的现有月份翻译判断创建页面语言，同时让手机端日期浮层限制在视口内独立纵向滚动，并在关闭创建用户窗口时同步关闭浮层。

@@ -5,8 +5,8 @@ const path = require('node:path');
 process.env.TZ = 'Asia/Shanghai';
 
 const bundle = fs.readFileSync(path.join(__dirname, '../../../public/assets/admin/assets/index-CEIYH7i8.js'), 'utf8');
-const editMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(u\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-edit-v5\*\//);
-const createMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(r\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-create-v5\*\//);
+const editMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(u\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-edit-v6\*\//);
+const createMatch = bundle.match(/h=e=>\{(const t=new Date,n=Number\(r\.getValues\("expired_at"\)\).+?)\};\/\*smart-expiry-create-v6\*\//);
 assert.ok(editMatch, 'edit-user renewal function exists');
 assert.ok(createMatch, 'create-user renewal function exists');
 
@@ -92,7 +92,7 @@ for (const key of ['expire_time_1month', 'expire_time_3months', 'expire_time_6mo
 }
 assert.equal((bundle.match(/onClick:\(\)=>h\((1|3|6|9|12)\)/g) || []).length, 10, 'both scenes share one handler per form');
 assert.ok(bundle.includes('type:"datetime-local",step:"1"'), 'date-time picker keeps second precision');
-assert.ok(bundle.includes('smart-expiry-create-v5'), 'create-user bridge marker exists');
+assert.ok(bundle.includes('smart-expiry-create-v6'), 'create-user bridge marker exists');
 assert.ok(bundle.includes('r.setValue("expired_at",null,{shouldDirty:!0,shouldValidate:!0}),u(!1)'), 'permanent reuses null expiry semantics');
 assert.ok((bundle.match(/className:"grid grid-cols-3 gap-2"/g) || []).length >= 2, 'expiry actions use a stable three-column mobile grid');
 assert.equal((bundle.match(/className:"w-full min-w-0 px-1 text-xs sm:px-3 sm:text-sm"/g) || []).length, 12, 'all expiry buttons are mobile-safe');
@@ -102,7 +102,7 @@ for (const key of ['edit.form.expire_time_6months', 'edit.form.expire_time_9mont
   'generate.form.expire_time_today', 'generate.form.expire_time_confirm']) {
   assert.ok(bundle.includes(`const n="${key}"`), `${key} has an explicit translated fallback`);
 }
-assert.ok(bundle.includes('r.includes("永久")?"一个月"'), 'Chinese create-user month fallback is selected from the permanent label');
+assert.ok(bundle.includes('r.includes("月")?"一个月"'), 'Chinese create-user month fallback is selected from an existing month label');
 assert.equal(bundle.includes('const e="edit.form.expire_time_6months"'), false, 'edit fallback never shadows the translation function');
 
 const createFallbacks = {
@@ -121,9 +121,9 @@ for (const [suffix, [zh, en]] of Object.entries(createFallbacks)) {
   const match = bundle.match(new RegExp(`children:(\\(\\(\\)=>\\{const n="${escaped}".+?\\}\\)\\(\\))`));
   assert.ok(match, `${key} fallback expression exists`);
   const render = Function('t', `return ${match[1]}`);
-  assert.equal(render(candidate => candidate === 'generate.form.permanent' ? '永久' : candidate), zh);
-  assert.equal(render(candidate => candidate === 'generate.form.permanent' ? 'Permanent' : candidate), en);
-  assert.equal(render(candidate => candidate === key ? `已翻译:${suffix}` : '永久'), `已翻译:${suffix}`);
+  assert.equal(render(candidate => candidate === 'edit.form.expire_time_1month' ? '一个月' : candidate), zh);
+  assert.equal(render(candidate => candidate === 'edit.form.expire_time_1month' ? 'One Month' : candidate), en);
+  assert.equal(render(candidate => candidate === key ? `已翻译:${suffix}` : '一个月'), `已翻译:${suffix}`);
 }
 
 for (const [suffix, zh] of [['expire_time_6months', '六个月'], ['expire_time_9months', '九个月'], ['expire_time_1year', '一年']]) {
@@ -141,5 +141,11 @@ const createEnd = bundle.indexOf('Q.jsx(TYt,{control:r.control,name:"plan_id"', 
 const createExpiryUi = bundle.slice(createStart, createEnd);
 assert.ok(createStart > 0 && createEnd > createStart, 'create-user expiry UI boundaries exist');
 assert.equal(createExpiryUi.includes('cT('), false, 'expiry controls never call the create-user API');
+assert.ok(bundle.includes('H.useEffect(()=>{n||u(!1)},[n])'), 'closing create-user also closes the expiry popover');
+assert.ok(bundle.includes('grid grid-cols-1 gap-4 sm:grid-cols-2'), 'create-user expiry row is responsive');
+assert.ok(createExpiryUi.includes('maxHeight:"calc(100vh - 2rem)"'), 'mobile expiry popover stays inside the viewport');
+assert.ok(createExpiryUi.includes('overflowY:"auto"'), 'mobile expiry popover scrolls internally');
+assert.ok(createExpiryUi.includes('touchAction:"pan-y"'), 'mobile expiry popover uses vertical touch gestures');
+assert.equal(createExpiryUi.includes('onInteractOutside:e=>{e.preventDefault()}'), false, 'outside interaction can close the expiry popover');
 
 console.log('SmartExpiry edit/create renewal tests passed');
